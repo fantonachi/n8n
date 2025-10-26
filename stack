@@ -1,0 +1,190 @@
+# Definição dos Serviços
+services:
+  # Banco de Dados Postgres
+  postgres:
+    image: postgres:15
+    container_name: n8n_postgres
+    restart: unless-stopped
+    networks:
+      - network_public
+    environment:
+      # Usuário do banco de dados
+      - POSTGRES_USER=${DB_POSTGRESDB_USER}
+      # Senha do banco de dados
+      - POSTGRES_PASSWORD=${DB_POSTGRESDB_PASSWORD}
+      # Nome do banco de dados
+      - POSTGRES_DB=${DB_POSTGRESDB_DATABASE}
+    volumes:
+      # Armazenamento persistente do banco
+      - /mnt/dados/n8n/postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_POSTGRESDB_USER}"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Redis - Fila de Execução
+  redis:
+    image: redis:7
+    container_name: n8n_redis
+    restart: unless-stopped
+    networks:
+      - network_public
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes:
+      - /mnt/dados/n8n/redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+
+  # Editor Web do N8N
+  n8n_editor:
+    image: n8nio/n8n:latest
+    command: start
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - network_public
+    ports:
+      - "5678:5678"
+    environment:
+      # Banco de Dados
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_DATABASE=${DB_POSTGRESDB_DATABASE}
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_USER=${DB_POSTGRESDB_USER}
+      - DB_POSTGRESDB_PASSWORD=${DB_POSTGRESDB_PASSWORD}
+      # Criptografia
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      # Host e URLs
+      - N8N_HOST=${N8N_HOST}
+      - N8N_EDITOR_BASE_URL=${N8N_EDITOR_BASE_URL}
+      - N8N_PROTOCOL=${N8N_PROTOCOL}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      # Execução
+      - NODE_ENV=${NODE_ENV}
+      - EXECUTIONS_MODE=${EXECUTIONS_MODE}
+      # Redis
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_DB=2
+      # Comunidade e Funções Externas
+      - N8N_REINSTALL_MISSING_PACKAGES=${N8N_REINSTALL_MISSING_PACKAGES}
+      - N8N_COMMUNITY_PACKAGES_ENABLED=${N8N_COMMUNITY_PACKAGES_ENABLED}
+      - NODE_FUNCTION_ALLOW_EXTERNAL=${NODE_FUNCTION_ALLOW_EXTERNAL}
+      # Limpeza e Retenção
+      - EXECUTIONS_DATA_PRUNE=${EXECUTIONS_DATA_PRUNE}
+      - EXECUTIONS_DATA_MAX_AGE=${EXECUTIONS_DATA_MAX_AGE}
+      # Timezone
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+    volumes:
+      # Volume persistente de dados do N8N (configurações e workflows)
+      - /mnt/dados/n8n/editor:/home/node/.n8n
+    deploy:
+      mode: replicated
+      replicas: 1
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 1024M
+
+  # Webhook Server do N8N
+  n8n_webhook:
+    image: n8nio/n8n:latest
+    command: webhook
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - network_public
+    ports:
+      - "5679:5678"
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_DATABASE=${DB_POSTGRESDB_DATABASE}
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_USER=${DB_POSTGRESDB_USER}
+      - DB_POSTGRESDB_PASSWORD=${DB_POSTGRESDB_PASSWORD}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_HOST=${N8N_HOST}
+      - N8N_EDITOR_BASE_URL=${N8N_EDITOR_BASE_URL}
+      - N8N_PROTOCOL=${N8N_PROTOCOL}
+      - NODE_ENV=${NODE_ENV}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - EXECUTIONS_MODE=${EXECUTIONS_MODE}
+      - N8N_REINSTALL_MISSING_PACKAGES=${N8N_REINSTALL_MISSING_PACKAGES}
+      - N8N_COMMUNITY_PACKAGES_ENABLED=${N8N_COMMUNITY_PACKAGES_ENABLED}
+      - NODE_FUNCTION_ALLOW_EXTERNAL=${NODE_FUNCTION_ALLOW_EXTERNAL}
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_DB=2
+      - EXECUTIONS_DATA_PRUNE=${EXECUTIONS_DATA_PRUNE}
+      - EXECUTIONS_DATA_MAX_AGE=${EXECUTIONS_DATA_MAX_AGE}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 1024M
+
+  # Worker do N8N (fila BullMQ)
+  n8n_worker:
+    image: n8nio/n8n:latest
+    command: worker --concurrency=20
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - network_public
+    environment:
+      - DB_TYPE=postgresdb
+      - DB_POSTGRESDB_DATABASE=${DB_POSTGRESDB_DATABASE}
+      - DB_POSTGRESDB_HOST=postgres
+      - DB_POSTGRESDB_PORT=5432
+      - DB_POSTGRESDB_USER=${DB_POSTGRESDB_USER}
+      - DB_POSTGRESDB_PASSWORD=${DB_POSTGRESDB_PASSWORD}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY}
+      - N8N_HOST=${N8N_HOST}
+      - N8N_EDITOR_BASE_URL=${N8N_EDITOR_BASE_URL}
+      - N8N_PROTOCOL=${N8N_PROTOCOL}
+      - NODE_ENV=${NODE_ENV}
+      - WEBHOOK_URL=${WEBHOOK_URL}
+      - EXECUTIONS_MODE=${EXECUTIONS_MODE}
+      - N8N_REINSTALL_MISSING_PACKAGES=${N8N_REINSTALL_MISSING_PACKAGES}
+      - N8N_COMMUNITY_PACKAGES_ENABLED=${N8N_COMMUNITY_PACKAGES_ENABLED}
+      - NODE_FUNCTION_ALLOW_EXTERNAL=${NODE_FUNCTION_ALLOW_EXTERNAL}
+      - QUEUE_BULL_REDIS_HOST=redis
+      - QUEUE_BULL_REDIS_PORT=6379
+      - QUEUE_BULL_REDIS_DB=2
+      - EXECUTIONS_DATA_PRUNE=${EXECUTIONS_DATA_PRUNE}
+      - EXECUTIONS_DATA_MAX_AGE=${EXECUTIONS_DATA_MAX_AGE}
+      - GENERIC_TIMEZONE=${GENERIC_TIMEZONE}
+    deploy:
+      mode: replicated
+      replicas: 2
+      placement:
+        constraints:
+          - node.role == manager
+      resources:
+        limits:
+          cpus: "0.5"
+          memory: 2048M
+
+# Definição da Rede
+networks:
+  network_public:
+    name: network_public
+    external: true
