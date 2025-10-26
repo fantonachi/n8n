@@ -3,3 +3,6 @@ sudo chown -R 999:999 /mnt/dados/n8n/postgres && \
 sudo chown -R 1000:1000 /mnt/dados/n8n/editor && \
 sudo chown -R 999:999 /mnt/dados/n8n/redis && \
 sudo chmod -R 770 /mnt/dados/n8n
+
+
+No portainer -> Crie uma network com o nome network_public
